@@ -1,37 +1,35 @@
 """
 main.py — entry point for whisperflow.
 
-Run this directly: python main.py
-Keep it alive with: python main.py (it blocks on the hotkey listener)
-
-Right now it's just bootstrapping — actual listen/record/transcribe loop
-gets wired up in Phase 2.
+Run it: python main.py
+Stop it: Ctrl+C
 """
 
 import sys
-
-# Pull in all the modules to make sure nothing's broken at import time
+import time
 from src import config
-from src.hotkey_listener import start_listener, stop_listener
-from src.audio_recorder import start_recording, stop_recording, save_audio
-from src.transcriber import transcribe
-from src.clipboard_handler import paste_text
-
+from src import hotkey_listener
 
 def main():
-    # Make sure the .env is loaded and OPENAI_API_KEY is present
-    # before we get anywhere near the mic or hotkeys
+    # Validate config before touching the mic or keyboard
     try:
         config.validate()
     except EnvironmentError as e:
-        print(f"[config error] {e}")
+        print(e)
         sys.exit(1)
 
-    print("App initialized successfully")
+    print(f"WhisperFlow running | Hotkey: {config.HOTKEY} | Model: {config.MODEL}")
+    print("Hold the hotkey to record. Release to transcribe and paste.")
+    print("Press Ctrl+C to quit.\n")
 
-    # TODO (Phase 2): start the hotkey listener here
-    # TODO (Phase 2): wire up on_press → start_recording, on_release → stop + transcribe + paste
-    # TODO (Phase 2): block on listener.join() so the process stays alive
+    hotkey_listener.start_listener()
+
+    try:
+        while True:
+            time.sleep(1)
+    except KeyboardInterrupt:
+        hotkey_listener.stop_listener()
+        print("\nWhisperFlow stopped.")
 
 
 if __name__ == "__main__":

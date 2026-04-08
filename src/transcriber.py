@@ -2,53 +2,72 @@
 transcriber.py — sends audio to OpenAI and gets text back.
 
 Thin wrapper around the OpenAI audio transcription API. Takes a path to a .wav
-file and returns the transcribed string. That's it — no pre-processing, no
-post-processing, just audio in, text out.
+file and returns the transcribed string. Audio in, text out — nothing else.
 """
 
-from openai import OpenAI
+import os
+from openai import OpenAI, APIError
 
 from src import config
 
 
-# Reuse a single client for the whole session — no point recreating it each call
+# Single client instance reused for the whole session
 _client: OpenAI | None = None
 
 
 def _get_client() -> OpenAI:
-    """
-    Returns the shared OpenAI client, creating it on first call.
-
-    TODO: initialise _client with config.OPENAI_API_KEY if it's None
-    TODO: return _client
-    """
-    pass
+    """Returns the shared OpenAI client, creating it on the first call."""
+    global _client
+    if _client is None:
+        _client = OpenAI(api_key=config.OPENAI_API_KEY)
+    return _client
 
 
 def transcribe(audio_path: str) -> str:
     """
     Transcribes a .wav file using the OpenAI transcription API.
 
-    Opens the audio file, ships it off to OpenAI's transcription endpoint,
-    and returns the plain text result. The temp file is NOT deleted here —
-    cleanup is the caller's responsibility (or just let the next recording
-    overwrite it).
+    Opens the file, ships it to the API, and returns the plain text result.
+    The temp file is NOT deleted here — it gets overwritten on the next recording.
 
     Args:
-        audio_path (str): path to the .wav file to transcribe
+        audio_path: path to the .wav file produced by audio_recorder.save_audio()
 
     Returns:
-        str: the transcribed text, stripped of leading/trailing whitespace.
-             Returns an empty string if the API gives back nothing.
+        Transcribed text, stripped of leading/trailing whitespace.
+        Empty string if the API returns nothing useful.
 
     Raises:
-        FileNotFoundError: if audio_path doesn't exist
-        openai.APIError:   if the API call fails (network issue, bad key, etc.)
-
-    TODO: validate that audio_path exists — raise FileNotFoundError if not
-    TODO: open the file in binary mode
-    TODO: call client.audio.transcriptions.create() with config.TRANSCRIPTION_MODEL
-    TODO: return response.text.strip()
-    TODO: add basic retry logic for transient network errors (optional, phase 2)
+        FileNotFoundError: if audio_path doesn't exist on disk
+        RuntimeError:      on API or network errors (with a human-readable message)
     """
-    pass
+    if not os.path.exists(audio_path):
+        raise FileNotFoundError(
+            f"[transcriber] Audio file not found: {audio_path}"
+        )
+
+    print("[transcriber] Sending to OpenAI...")
+
+    try:
+        with open(audio_path, "rb") as audio_file:
+            response = _get_client().audio.transcriptions.create(
+                model=config.MODEL,
+                file=audio_file,
+                response_format="text",
+            )
+    except APIError as e:
+        raise RuntimeError(
+            f"[transcriber] OpenAI API error: {e}\n"
+            "  → Check your OPENAI_API_KEY and internet connection."
+        )
+
+    # response_format="text" returns a plain string directly
+    text = response if isinstance(response, str) else response.text
+    result = text.strip() if text else ""
+
+    if result:
+        print(f"[transcriber] Got: \"{result}\"")
+    else:
+        print("[transcriber] Got empty response from API.")
+
+    return result
