@@ -20,3 +20,6 @@ pyautogui>=0.9.54
 
 # .env file support
 python-dotenv>=1.0.0
+
+# macOS menu bar + native notifications
+rumps>=0.4.0

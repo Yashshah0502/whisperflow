@@ -6,16 +6,16 @@ whisperflow is a lightweight macOS background app that records your voice while
 you hold a hotkey, transcribes it via OpenAI, and pastes the result directly
 into whatever app you're currently in — Slack, VS Code, browser, Notes, anything.
 
-No UI. No window. Just a key combo and your voice.
+Lives in your menu bar as 🎙. No window, no UI, just a key combo and your voice.
 
 ---
 
 ## What it does
 
-1. You hold **Right Option (⌥)** — recording starts instantly
+1. You hold **Ctrl+Shift+Space** — recording starts, menu bar shows 🔴
 2. You speak
-3. You release the key — audio ships off to OpenAI's transcription API
-4. Transcribed text is pasted at your cursor, wherever it is
+3. You release — text ships to OpenAI, menu bar shows ⚡
+4. Transcribed text is pasted at your cursor, macOS notification pops up ✅
 
 ---
 
@@ -64,23 +64,49 @@ source venv/bin/activate
 python main.py
 ```
 
-The app runs in the background. Hold **Right Option (⌥)**, speak, release — done.
+The 🎙 icon appears in your menu bar. Hold **Ctrl+Shift+Space**, speak, release — done.
 
-To quit, hit `Ctrl+C` in the terminal.
+To quit: click 🎙 → Quit, or press `Ctrl+C` in the terminal.
+
+---
+
+## Configuration
+
+On first run, whisperflow creates **`whisperflow.json`** in the project root:
+
+```json
+{
+  "hotkey": "ctrl+shift+space",
+  "model": "gpt-4o-mini-transcribe",
+  "samplerate": 44100,
+  "channels": 1,
+  "language": null
+}
+```
+
+Edit this file to change settings. You can also open it from the menu bar: 🎙 → **Open Config File**.
+
+| Key | Default | Description |
+|---|---|---|
+| `hotkey` | `ctrl+shift+space` | Key combo that triggers recording |
+| `model` | `gpt-4o-mini-transcribe` | OpenAI transcription model |
+| `samplerate` | `44100` | Mic sample rate (Hz) |
+| `channels` | `1` | Audio channels (1 = mono) |
+| `language` | `null` | ISO-639-1 code (`"en"`, `"hi"`, `"gu"`) or `null` for auto-detect |
 
 ---
 
 ## macOS permissions
 
-macOS will block two things on first run. You need to allow both:
+macOS will ask for two permissions on first run. Both are required:
 
-**Microphone access**
+**Microphone**
 > System Settings → Privacy & Security → Microphone → enable for Terminal (or your IDE)
 
-**Accessibility access** (needed to simulate Cmd+V)
+**Accessibility** (needed to simulate Cmd+V)
 > System Settings → Privacy & Security → Accessibility → enable for Terminal (or your IDE)
 
-Without Accessibility, the app can record and transcribe but can't paste.
+whisperflow will show a native notification if either permission is missing.
 
 ---
 
@@ -89,13 +115,17 @@ Without Accessibility, the app can record and transcribe but can't paste.
 ```
 whisperflow/
 ├── src/
-│   ├── config.py            ← env vars + constants (hotkey, audio settings)
-│   ├── hotkey_listener.py   ← global key listener via pynput
+│   ├── config.py            ← loads .env + whisperflow.json, exposes all constants
+│   ├── config_manager.py    ← reads/writes whisperflow.json
+│   ├── hotkey_listener.py   ← global key listener, orchestrates the pipeline
 │   ├── audio_recorder.py    ← mic recording via sounddevice
 │   ├── transcriber.py       ← OpenAI transcription API wrapper
-│   └── clipboard_handler.py ← paste via pyperclip + pyautogui
+│   ├── clipboard_handler.py ← paste via pyperclip + pyautogui
+│   ├── menu_bar.py          ← rumps menu bar app (🎙 icon + status)
+│   └── notifier.py          ← native macOS notifications via rumps
 ├── temp/                    ← temp audio files (auto-created, gitignored)
 ├── main.py                  ← entry point
+├── whisperflow.json         ← user config (auto-created on first run)
 ├── requirements.txt
 ├── .env.example
 └── Readme.md
@@ -114,6 +144,7 @@ whisperflow/
 | `numpy` | Audio buffer handling |
 | `pyperclip` | Clipboard access |
 | `pyautogui` | Simulating Cmd+V |
+| `rumps` | macOS menu bar app + native notifications |
 | `python-dotenv` | .env file loading |
 
 ---
@@ -121,6 +152,6 @@ whisperflow/
 ## Roadmap
 
 - [x] Phase 1 — project skeleton and module stubs
-- [ ] Phase 2 — wire up hotkey → record → transcribe → paste loop
-- [ ] Phase 3 — status indicator (menubar icon or sound cue)
-- [ ] Phase 4 — configurable hotkey via .env
+- [x] Phase 2 — hotkey → record → transcribe → paste
+- [x] Phase 3 — menu bar icon, native notifications, JSON config, language support
+- [ ] Phase 4 — custom icon, launch at login, recording sound cue

@@ -12,6 +12,7 @@ import time
 import pyperclip
 import pyautogui
 
+from src import notifier
 
 # Silence pyautogui's "move mouse to corner to abort" failsafe — it's annoying
 # in a background app. Remove this line if you want the safety net back.
@@ -38,9 +39,8 @@ def paste_text(text: str):
         time.sleep(0.1)  # let the OS catch up before we fire the shortcut
         pyautogui.hotkey("command", "v")
         print(f"[clipboard] Pasted: \"{text}\"")
+        notifier.notify("WhisperFlow", "Transcription copied!")
     except pyautogui.FailSafeException:
-        # Mouse was in the top-left corner — shouldn't happen with FAILSAFE=False
-        # but just in case someone re-enables it
         print("[clipboard] Paste aborted (pyautogui failsafe triggered).")
     except Exception as e:
         print(
@@ -48,3 +48,4 @@ def paste_text(text: str):
             "  → Check System Settings → Privacy & Security → Accessibility\n"
             "     and make sure Terminal (or your IDE) has permission."
         )
+        notifier.notify("WhisperFlow", "Paste failed. Check System Settings → Accessibility.")

@@ -11,9 +11,7 @@ import threading
 import numpy as np
 import sounddevice as sd
 import soundfile as sf
-
 from src import config
-
 
 # Audio chunks accumulate here while recording is in flight
 _audio_buffer: list = []

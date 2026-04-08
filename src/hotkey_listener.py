@@ -5,30 +5,29 @@ Uses pynput to listen globally across all apps. Tracks which modifier keys are
 currently held so we can detect the full combo (ctrl+shift+space) on press and
 trigger the transcription pipeline on release.
 
-The record → save → transcribe → paste flow runs in a background thread so it
-doesn't block the keyboard listener while OpenAI is thinking.
+The record → save → transcribe → paste flow runs in a background thread so the
+keyboard listener stays responsive while OpenAI is thinking.
 """
 
 import threading
 from pynput import keyboard
 from src import config
-from src import audio_recorder, transcriber, clipboard_handler
+from src import audio_recorder, transcriber, clipboard_handler, notifier
 
 
 # ── Internal state ────────────────────────────────────────────────────────────
 
 _listener: keyboard.Listener | None = None
 
-# Keys currently held down — used to detect when the full combo is active
+# The menu bar app — set by start_listener() so we can update status icons
+_app = None
+
+# Keys currently held down
 _pressed: set = set()
 
-# Prevents starting a new recording while one is already in flight
+# Guards against starting a new recording while one is already in flight
 _is_recording: bool = False
-
-# Serialises access to _is_recording across the listener thread and the
-# background pipeline thread
 _lock = threading.Lock()
-
 
 # ── Key matching helpers ──────────────────────────────────────────────────────
 
@@ -41,14 +40,12 @@ def _is_shift(key) -> bool:
 
 
 def _is_space(key) -> bool:
-    # pynput can give us Key.space or a KeyCode with char=' ' depending on the OS
     return key == keyboard.Key.space or (
         hasattr(key, "char") and key.char == " "
     )
 
 
 def _combo_active() -> bool:
-    """Returns True if ctrl+shift+space are all currently held."""
     return (
         any(_is_ctrl(k) for k in _pressed)
         and any(_is_shift(k) for k in _pressed)
@@ -56,32 +53,44 @@ def _combo_active() -> bool:
     )
 
 
-# ── Pipeline ──────────────────────────────────────────────────────────────────
+# ── Pipeline (runs in a background thread on release) ────────────────────────
 
 def _run_pipeline():
-    """
-    Runs the stop → save → transcribe → paste pipeline in a background thread.
-    Fires once the hotkey combo is released.
-    """
+    global _app
+
     try:
         audio_data = audio_recorder.stop_recording()
 
         if audio_data is None or len(audio_data) == 0:
             print("[whisperflow] Recording too short — nothing to transcribe.")
+            if _app:
+                _app.set_status_idle()
             return
+
+        if _app:
+            _app.set_status_transcribing()
 
         audio_path = audio_recorder.save_audio(audio_data)
         text = transcriber.transcribe(audio_path)
 
         if text:
             clipboard_handler.paste_text(text)
+        else:
+            notifier.notify("WhisperFlow", "Transcription came back empty.")
 
         print("[whisperflow] Done.\n")
 
     except RuntimeError as e:
         print(e)
+        notifier.notify("WhisperFlow", "Transcription failed. Check terminal.")
+
     except Exception as e:
         print(f"[whisperflow] Unexpected error: {e}")
+        notifier.notify("WhisperFlow", "Something went wrong. Check terminal.")
+
+    finally:
+        if _app:
+            _app.set_status_idle()
 
 
 # ── pynput callbacks ──────────────────────────────────────────────────────────
@@ -94,12 +103,20 @@ def _on_press(key):
     with _lock:
         if _combo_active() and not _is_recording:
             _is_recording = True
+            if _app:
+                _app.set_status_recording()
             print("\n[whisperflow] Recording... (release ctrl+shift+space to stop)")
             try:
                 audio_recorder.start_recording()
             except RuntimeError as e:
                 print(e)
+                notifier.notify(
+                    "WhisperFlow",
+                    "Mic access denied. Check System Settings → Privacy → Microphone",
+                )
                 _is_recording = False
+                if _app:
+                    _app.set_status_idle()
 
 
 def _on_release(key):
@@ -111,22 +128,21 @@ def _on_release(key):
     with _lock:
         if was_full_combo and _is_recording:
             _is_recording = False
-            # Run the pipeline off the listener thread so key events keep flowing
             threading.Thread(target=_run_pipeline, daemon=True).start()
 
 
 # ── Public API ────────────────────────────────────────────────────────────────
 
-def start_listener():
+def start_listener(app=None):
     """
     Starts the global keyboard listener in a background daemon thread.
 
-    The listener watches every key event system-wide and fires the recording
-    pipeline whenever the configured hotkey combo is held and released.
-
-    Requires Accessibility permissions on macOS — the OS will prompt on first run.
+    Args:
+        app: optional WhisperFlowApp instance — if provided, its status
+             items are updated as the pipeline moves through each stage.
     """
-    global _listener
+    global _listener, _app
+    _app = app
 
     print(f"[whisperflow] Listening for hotkey: {config.HOTKEY}")
 
@@ -136,10 +152,7 @@ def start_listener():
 
 
 def stop_listener():
-    """
-    Stops the global keyboard listener cleanly. Safe to call even if it was
-    never started.
-    """
+    """Stops the keyboard listener cleanly. Safe to call if never started."""
     global _listener
 
     if _listener is not None:

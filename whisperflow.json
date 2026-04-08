@@ -1,0 +1,7 @@
+{
+  "hotkey": "ctrl+shift+space",
+  "model": "gpt-4o-mini-transcribe",
+  "samplerate": 44100,
+  "channels": 1,
+  "language": null
+}
